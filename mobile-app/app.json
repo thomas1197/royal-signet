@@ -79,7 +79,7 @@
     },
     "extra": {
       "eas": {
-        "projectId": "your-project-id-here"
+        "projectId": "REPLACE_WITH_YOUR_EAS_PROJECT_ID"
       }
     },
     "plugins": [

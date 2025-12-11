@@ -172,16 +172,16 @@ service cloud.firestore {
       allow delete: if isPastor();
     }
 
-    // Sermons - public read, admin write only (for now all authenticated users can write for testing)
+    // Sermons - public read, only pastor/admin can write
     match /sermons/{sermonId} {
       allow read: if true;
-      allow create, update, delete: if isSignedIn();
+      allow create, update, delete: if canManageContent();
     }
 
-    // Events - public read, admin write only
+    // Events - public read, only pastor/admin can write
     match /events/{eventId} {
       allow read: if true;
-      allow create, update, delete: if isSignedIn();
+      allow create, update, delete: if canManageContent();
     }
 
     // Event Registrations - users can create their own, read their own
@@ -245,10 +245,10 @@ service cloud.firestore {
       allow update: if false;
     }
 
-    // Updates/News - public read, admin write
+    // Updates/News - public read, only pastor/admin can write
     match /updates/{updateId} {
       allow read: if true;
-      allow create, update, delete: if isSignedIn();
+      allow create, update, delete: if canManageContent();
     }
 
     // Donations - users can only read their own donations
@@ -266,10 +266,10 @@ service cloud.firestore {
       allow create, update, delete: if false; // Only Cloud Functions can write
     }
 
-    // App Settings - public read, admin write only
+    // App Settings - public read, only pastor/admin can write
     match /settings/{settingId} {
       allow read: if true;
-      allow write: if isSignedIn(); // For testing, restrict to admin in production
+      allow write: if canManageContent();
     }
 
     // User Preferences - users can only access their own
@@ -289,12 +289,12 @@ service cloud.firestore {
       allow update, delete: if isSignedIn() && isOwner(resource.data.userId);
     }
 
-    // Friday Prayers - all authenticated users can read, only authenticated users can create
+    // Friday Prayers - authenticated users can read, only pastor/admin can manage
     match /fridayPrayers/{prayerId} {
       allow read: if isSignedIn();
-      allow create: if isSignedIn(); // Allow any authenticated user to create (auto-creation)
-      allow update: if isSignedIn(); // Allow updates (for deactivation)
-      allow delete: if false; // No deletion
+      allow create: if canManageContent();
+      allow update: if canManageContent();
+      allow delete: if false; // No deletion, use soft delete
     }
 
     // Friday Prayer RSVPs - users can create and manage their own RSVPs
@@ -305,10 +305,10 @@ service cloud.firestore {
       allow delete: if false; // Use status change instead
     }
 
-    // Life Group Materials - all authenticated users can read, authenticated users can write (for now)
+    // Life Group Materials - authenticated users can read, only pastor/admin can write
     match /lifeGroupMaterials/{materialId} {
       allow read: if isSignedIn();
-      allow create, update, delete: if isSignedIn(); // For testing, restrict to admin in production
+      allow create, update, delete: if canManageContent();
     }
   }
 }
