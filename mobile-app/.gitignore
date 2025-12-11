@@ -1,0 +1,73 @@
+# Learn more https://docs.github.com/en/get-started/getting-started-with-git/ignoring-files
+
+# Dependencies
+node_modules/
+
+# Expo
+.expo/
+dist/
+web-build/
+expo-env.d.ts
+
+# Native - generated folders (use prebuild to regenerate)
+/ios
+/android
+.kotlin/
+*.orig.*
+
+# Certificates, keystores, and secrets - NEVER commit
+*.jks
+*.p8
+*.p12
+*.key
+*.keystore
+*.mobileprovision
+*.pem
+google-services.json
+GoogleService-Info.plist
+
+# Environment files - CRITICAL: Never commit actual env files
+.env
+.env.local
+.env.development
+.env.production
+.env.*.local
+# Keep example files for reference
+!.env.example
+!.env.production.template
+
+# Metro
+.metro-health-check*
+
+# Debug logs
+npm-debug.*
+yarn-debug.*
+yarn-error.*
+*.log
+
+# macOS
+.DS_Store
+._*
+
+# Windows
+Thumbs.db
+ehthumbs.db
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+.null.swp
+
+# TypeScript
+*.tsbuildinfo
+
+# Test coverage
+coverage/
+.nyc_output/
+
+# Temporary files
+*.tmp
+*.temp
+*.bak

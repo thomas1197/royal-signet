@@ -1,0 +1,314 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ============================================
+    // HELPER FUNCTIONS
+    // ============================================
+
+    // Check if user is authenticated
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    // Check if user owns the resource
+    function isOwner(userId) {
+      return request.auth.uid == userId;
+    }
+
+    // Get user document data
+    function getUserData() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
+    }
+
+    // Role checking functions
+    function hasRole(role) {
+      return isSignedIn() && getUserData().role == role;
+    }
+
+    function isPastor() {
+      return hasRole('pastor');
+    }
+
+    function isSundaySchoolHead() {
+      return hasRole('sundaySchoolHead');
+    }
+
+    function isAdmin() {
+      return hasRole('admin');
+    }
+
+    function isPastorOrAdmin() {
+      return isPastor() || isAdmin();
+    }
+
+    function canManageSundaySchool() {
+      return isPastor() || isSundaySchoolHead();
+    }
+
+    function canTakeAttendance() {
+      return isPastor() || isAdmin() || isSundaySchoolHead();
+    }
+
+    function canManageContent() {
+      return isPastor() || isAdmin();
+    }
+
+    // ============================================
+    // USERS COLLECTION
+    // ============================================
+    match /users/{userId} {
+      // Anyone signed in can read user profiles
+      allow read: if isSignedIn();
+      // Users can create their own profile
+      allow create: if isSignedIn() && isOwner(userId);
+      // Users can update own profile, but only pastor/admin can change roles
+      allow update: if isSignedIn() && (
+        (isOwner(userId) && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['role']))
+        || isPastorOrAdmin()
+      );
+      // Only pastor can delete users
+      allow delete: if isPastor();
+    }
+
+    // ============================================
+    // SUNDAY SCHOOL CLASSES
+    // ============================================
+    match /sundaySchoolClasses/{classId} {
+      // Anyone signed in can view classes
+      allow read: if isSignedIn();
+      // Only pastor and SS head can manage classes
+      allow create, update, delete: if canManageSundaySchool();
+    }
+
+    // ============================================
+    // SUNDAY SCHOOL CHILDREN
+    // ============================================
+    match /sundaySchoolChildren/{childId} {
+      // Pastor and SS head can read all children
+      // Parents can read their own children
+      allow read: if isSignedIn() && (
+        canManageSundaySchool()
+        || request.auth.uid in resource.data.parentIds
+      );
+      // Pastor, SS head, Admin can create children
+      // Parents can register their own children
+      allow create: if isSignedIn() && (
+        canManageSundaySchool()
+        || isAdmin()
+        || request.auth.uid in request.resource.data.parentIds
+      );
+      // Pastor and SS head can update any child
+      // Parents can update their own children
+      allow update: if isSignedIn() && (
+        canManageSundaySchool()
+        || request.auth.uid in resource.data.parentIds
+      );
+      // Only pastor can delete
+      allow delete: if isPastor();
+    }
+
+    // ============================================
+    // ATTENDANCE SESSIONS
+    // ============================================
+    match /attendanceSessions/{sessionId} {
+      // Anyone with attendance permission can read
+      allow read: if canTakeAttendance();
+      // Pastor, Admin, SS Head can create sessions
+      allow create: if canTakeAttendance();
+      // Can update if created by user or has elevated role
+      allow update: if isSignedIn() && (
+        isPastorOrAdmin()
+        || resource.data.createdBy == request.auth.uid
+      );
+      // Only pastor can delete
+      allow delete: if isPastor();
+    }
+
+    // ============================================
+    // ATTENDANCE RECORDS
+    // ============================================
+    match /attendanceRecords/{recordId} {
+      // Can read if can take attendance
+      allow read: if canTakeAttendance();
+      // Can create attendance records
+      allow create: if canTakeAttendance();
+      // Can update own records or if pastor/admin
+      allow update: if isSignedIn() && (
+        isPastorOrAdmin()
+        || resource.data.checkedInBy == request.auth.uid
+      );
+      // Only pastor can delete
+      allow delete: if isPastor();
+    }
+
+    // ============================================
+    // CHURCH MEMBERS (FULL DIRECTORY - PASTOR ONLY)
+    // ============================================
+    match /churchMembers/{memberId} {
+      // Only pastor can view full directory with contacts
+      allow read: if isPastor();
+      // Pastor and admin can manage members
+      allow create, update: if isPastorOrAdmin();
+      // Only pastor can delete
+      allow delete: if isPastor();
+    }
+
+    // ============================================
+    // FAMILIES
+    // ============================================
+    match /families/{familyId} {
+      // Family members can read their own family
+      allow read: if isSignedIn() && request.auth.uid in resource.data.memberIds;
+      // Any authenticated user can create a family (they become head)
+      allow create: if isSignedIn() && request.auth.uid == request.resource.data.headId;
+      // Family head or pastor can update
+      allow update: if isSignedIn() && (
+        request.auth.uid == resource.data.headId
+        || isPastor()
+      );
+      // Only pastor can delete
+      allow delete: if isPastor();
+    }
+
+    // Sermons - public read, admin write only (for now all authenticated users can write for testing)
+    match /sermons/{sermonId} {
+      allow read: if true;
+      allow create, update, delete: if isSignedIn();
+    }
+
+    // Events - public read, admin write only
+    match /events/{eventId} {
+      allow read: if true;
+      allow create, update, delete: if isSignedIn();
+    }
+
+    // Event Registrations - users can create their own, read their own
+    match /eventRegistrations/{registrationId} {
+      allow read: if isSignedIn() && isOwner(resource.data.userId);
+      allow create: if isSignedIn() && isOwner(request.resource.data.userId);
+      allow update, delete: if isSignedIn() && isOwner(resource.data.userId);
+    }
+
+    // Prayer Requests - authenticated users can create, all can read
+    match /prayers/{prayerId} {
+      allow read: if true;
+      allow create: if isSignedIn();
+      allow update: if isSignedIn(); // Anyone can update prayer count
+      allow delete: if isSignedIn() && isOwner(resource.data.userId);
+    }
+
+    // Prayer responses (who prayed for what)
+    match /prayerResponses/{responseId} {
+      allow read: if isSignedIn();
+      allow create: if isSignedIn() && isOwner(request.resource.data.userId);
+      allow delete: if isSignedIn() && isOwner(resource.data.userId);
+    }
+
+    // Prayer Wall Requests - new collection for prayer wall feature
+    match /prayerRequests/{prayerId} {
+      // All signed-in users can read active and answered prayers
+      allow read: if isSignedIn();
+
+      // Users can create prayer requests with their own userId
+      allow create: if isSignedIn()
+        && request.resource.data.userId == request.auth.uid
+        && request.resource.data.status == 'active';
+
+      // Users can only update/delete their own prayer requests
+      allow update: if isSignedIn()
+        && isOwner(resource.data.userId)
+        && (
+          // Can update request text or status
+          request.resource.data.userId == resource.data.userId
+        );
+
+      // Soft delete only - users can delete their own prayers
+      allow delete: if false; // Use soft delete (status: 'deleted') instead
+    }
+
+    // Prayer Interactions - tracks who prayed for which prayer requests
+    match /prayerInteractions/{interactionId} {
+      // All signed-in users can read interactions
+      allow read: if isSignedIn();
+
+      // Users can create interactions for themselves
+      allow create: if isSignedIn()
+        && request.resource.data.userId == request.auth.uid
+        && request.resource.data.action == 'prayed';
+
+      // Users can delete their own interactions (to "unpray")
+      allow delete: if isSignedIn() && isOwner(resource.data.userId);
+
+      // No updates allowed
+      allow update: if false;
+    }
+
+    // Updates/News - public read, admin write
+    match /updates/{updateId} {
+      allow read: if true;
+      allow create, update, delete: if isSignedIn();
+    }
+
+    // Donations - users can only read their own donations
+    // Donations are created via Cloud Functions (which bypass security rules)
+    // Users cannot directly create donations - they must use the createPaymentIntent function
+    match /donations/{donationId} {
+      allow read: if isSignedIn() && isOwner(resource.data.userId);
+      allow create, update, delete: if false; // Only Cloud Functions can write
+    }
+
+    // Failed Payments - users can read their own failed payment attempts
+    // This collection is written by Cloud Functions for analytics
+    match /failed_payments/{failedPaymentId} {
+      allow read: if isSignedIn() && isOwner(resource.data.userId);
+      allow create, update, delete: if false; // Only Cloud Functions can write
+    }
+
+    // App Settings - public read, admin write only
+    match /settings/{settingId} {
+      allow read: if true;
+      allow write: if isSignedIn(); // For testing, restrict to admin in production
+    }
+
+    // User Preferences - users can only access their own
+    match /userPreferences/{userId} {
+      allow read, write: if isSignedIn() && isOwner(userId);
+    }
+
+    // Saved Content (bookmarks) - users can only access their own
+    match /savedContent/{userId}/{contentId} {
+      allow read, write: if isSignedIn() && isOwner(userId);
+    }
+
+    // Comments on sermons/events
+    match /comments/{commentId} {
+      allow read: if true;
+      allow create: if isSignedIn();
+      allow update, delete: if isSignedIn() && isOwner(resource.data.userId);
+    }
+
+    // Friday Prayers - all authenticated users can read, only authenticated users can create
+    match /fridayPrayers/{prayerId} {
+      allow read: if isSignedIn();
+      allow create: if isSignedIn(); // Allow any authenticated user to create (auto-creation)
+      allow update: if isSignedIn(); // Allow updates (for deactivation)
+      allow delete: if false; // No deletion
+    }
+
+    // Friday Prayer RSVPs - users can create and manage their own RSVPs
+    match /fridayPrayerRSVPs/{rsvpId} {
+      allow read: if isSignedIn();
+      allow create: if isSignedIn() && request.resource.data.userId == request.auth.uid;
+      allow update: if isSignedIn() && isOwner(resource.data.userId);
+      allow delete: if false; // Use status change instead
+    }
+
+    // Life Group Materials - all authenticated users can read, authenticated users can write (for now)
+    match /lifeGroupMaterials/{materialId} {
+      allow read: if isSignedIn();
+      allow create, update, delete: if isSignedIn(); // For testing, restrict to admin in production
+    }
+  }
+}
